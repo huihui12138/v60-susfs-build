@@ -568,18 +568,23 @@ fix_missing_build_files() {
 	ok "stubbed missing firmware blob and static_call.h"
 }
 
-# This CAF 4.19 tree hardcodes -Werror=<...> in its top-level Makefile, and
-# vendor drivers (techpack/display, vservices) trip those warnings on modern
-# clang. KCFLAGS=-Wno-error cannot override them because they are appended to
-# KBUILD_CFLAGS later. Downgrade every -Werror in the Makefile to -Wno-error.
+# This CAF 4.19 tree hardcodes -Werror in its top-level Makefile AND in vendor
+# driver Makefiles (drivers/vservices/Makefile has a bare "ccflags-y += -Werror").
+# Vendor drivers trip those warnings on modern clang. KCFLAGS=-Wno-error cannot
+# override them (appended later / in a different scope). Downgrade every
+# -Werror in all Makefiles/Kbuild files across the tree to -Wno-error.
 fix_werror_flags() {
-	local mk="${KERNEL_DIR}/Makefile"
-	[ -f "$mk" ] || return 0
-	local before after
-	before=$(grep -c -- '-Werror' "$mk" || true)
-	sed -i 's/-Werror/-Wno-error/g' "$mk"
-	after=$(grep -c -- '-Werror=' "$mk" || true)
-	ok "downgraded ${before} -Werror flags in top-level Makefile (remaining -Werror=: ${after})"
+	local before=0 files=0 mk
+	while IFS= read -r mk; do
+		[ -f "$mk" ] || continue
+		local n
+		n=$(grep -c -- '-Werror' "$mk" 2>/dev/null || true)
+		[ "${n:-0}" -gt 0 ] || continue
+		sed -i 's/-Werror/-Wno-error/g' "$mk"
+		before=$((before + n))
+		files=$((files + 1))
+	done < <(find "$KERNEL_DIR" \( -name Makefile -o -name Kbuild -o -name 'Makefile.*' \) -type f 2>/dev/null)
+	ok "downgraded ${before} -Werror flags across ${files} Makefile/Kbuild files"
 }
 
 # The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
