@@ -566,22 +566,6 @@ fix_missing_build_files() {
 		printf '#ifndef __LINUX_STATIC_CALL_H\n#define __LINUX_STATIC_CALL_H\n#endif\n' > "$h"
 	fi
 	ok "stubbed missing firmware blob and static_call.h"
-
-	# This SukiSU builtin snapshot expects a newer SUSFS KSU API than the
-	# 1.5.5 kernel patch provides.  Disable the optional KPM extension and
-	# the SUSFS-only supercall/monitor call sites; core root hiding is intact.
-	local ksu="${KERNEL_DIR}/KernelSU/kernel"
-	if [ -d "$ksu" ]; then
-		sed -i 's/^#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)$/#if 0/' \
-			"${ksu}/kernel_compat.h"
-		sed -i 's/^[[:space:]]*susfs_parse_priority_app_strings();/\/\/ disabled/' \
-			"${ksu}/manager/pkg_observer.c"
-		sed -i 's/^[[:space:]]*susfs_start_sdcard_monitor_fn();/\/\/ disabled/' \
-			"${ksu}/supercall/dispatch.c"
-		perl -0pi -e 's/#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_sys_reboot/#if 0\nint ksu_handle_sys_reboot/' \
-			"${ksu}/supercall/dispatch.c"
-		ok "disabled SukiSU features requiring newer SUSFS API"
-	fi
 }
 
 # The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
@@ -598,39 +582,6 @@ fix_fdinfo_inotify_mask() {
 	ok "replaced missing inotify_mark_user_mask helper in fdinfo.c"
 }
 
-# SukiSU builtin calls a handful of SUSFS helpers that only exist in newer
-# SUSFS releases.  Provide no-op/compatible definitions on top of 1.5.5.
-fix_sukisu_susfs_api() {
-	local h="${KERNEL_DIR}/include/linux/susfs_def.h"
-	[ -f "$h" ] || return 0
-	if ! grep -q 'susfs_set_current_proc_no_su' "$h"; then
-		cat >>"$h" <<'EOF'
-
-/* Compatibility shims for SukiSU builtin on SUSFS 1.5.5 */
-static inline bool susfs_starts_with(const char *s, const char *prefix)
-{
-	return strncmp(s, prefix, strlen(prefix)) == 0;
-}
-
-static inline bool susfs_ends_with(const char *s, const char *suffix)
-{
-	size_t sl = strlen(s), pl = strlen(suffix);
-	return sl >= pl && strcmp(s + sl - pl, suffix) == 0;
-}
-
-static inline void susfs_set_current_proc_no_su(void) {}
-static inline void susfs_set_current_proc_umounted(void) {}
-static inline void susfs_set_current_proc_umounted_for_zygote_next(void) {}
-EOF
-		ok "added SUSFS 1.5.5 compatibility helpers for SukiSU"
-	fi
-
-	# 4.19 has no strncpy_from_user_nofault; use SukiSU's own fallback wrapper.
-	local ev="${KERNEL_DIR}/KernelSU/kernel/sulog/event.c"
-	[ -f "$ev" ] || return 0
-	sed -i 's/\bstrncpy_from_user_nofault(/ksu_strncpy_from_user_nofault(/g' "$ev"
-}
-
 # --------------------------------------------------------------------- main ---
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
@@ -643,18 +594,18 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 		custom)       custom_apply ;;
 		droidspaces)  droidspaces_apply ;;
 		all)
+			# CAF 4.19 build fixes (independent of the KSU variant).
 			fix_missing_build_files
 			fix_vdso_macro_invocations
 
-			# Order matters and this is the tested one (4.19 + SukiSU builtin
-			# + SUSFS 1.5.5, no rejects):
-			#   path_umount and the hook patches both key off textual anchors
-			#   in files that SUSFS later rewrites, so they go first.
+			# Matched-version build: official KernelSU v0.9.5 (flat layout) +
+			# susfs4ksu kernel-4.19 v1.5.5. No SukiSU API shims needed: the
+			# KSU side and SUSFS side are from the same 1.5.5 generation and
+			# susfs_apply() applies the matching 10_enable_susfs_for_ksu.patch.
+			# path_umount and hook patches key off textual anchors that SUSFS
+			# later rewrites, so they go first.
 			if is_true "${ENABLE_PATH_UMOUNT:-false}"; then path_umount_apply; fi
 
-			# Driven by the *resolved* hook mode, not the raw setting, so that
-			# KSU_HOOK_MODE=auto on a pre-GKI kernel still gets its hooks
-			# patched in rather than only getting the Kconfig symbol set.
 			if [ "${KSU_VARIANT:-none}" != "none" ] &&
 			   [ "${KSU_HOOK_MODE_RESOLVED:-}" = "manual" ]; then
 				hooks_patch_apply
@@ -663,7 +614,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			if is_true "${ENABLE_SUSFS:-false}"; then
 				susfs_apply
 				fix_fdinfo_inotify_mask
-				fix_sukisu_susfs_api
 			fi
 			if is_true "${ENABLE_HIDE_STUFF:-false}"; then hide_stuff_apply; fi
 			if is_true "${ENABLE_CUSTOM_PATCHES:-false}"; then custom_apply; fi
