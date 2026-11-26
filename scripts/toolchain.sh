@@ -85,8 +85,23 @@ setup_clang() {
 			warn "master-kernel-build-2022/r450784e"
 		fi
 
-		fetch "${AOSP_CLANG_BASE}/+archive/refs/heads/${branch}/clang-${version}.tar.gz" \
-			"${WORKSPACE}/clang.tar.gz"
+		# AOSP gitiles occasionally returns a truncated tarball with HTTP 200;
+		# curl then succeeds and tar fails much later.  Validate gzip integrity
+		# before extracting and re-download a few times if needed.
+		local url attempt=1 max_attempts=6
+		url="${AOSP_CLANG_BASE}/+archive/refs/heads/${branch}/clang-${version}.tar.gz"
+		while [ "$attempt" -le "$max_attempts" ]; do
+			fetch "$url" "${WORKSPACE}/clang.tar.gz"
+			if gzip -t "${WORKSPACE}/clang.tar.gz" 2>/dev/null; then
+				break
+			fi
+			warn "corrupt clang archive (attempt ${attempt}/${max_attempts}), re-downloading"
+			rm -f "${WORKSPACE}/clang.tar.gz"
+			attempt=$((attempt + 1))
+			sleep 5
+		done
+		[ "$attempt" -le "$max_attempts" ] \
+			|| die "clang archive stayed corrupt after ${max_attempts} attempts"
 		extract_archive "${WORKSPACE}/clang.tar.gz" "$CLANG_DIR"
 	fi
 
