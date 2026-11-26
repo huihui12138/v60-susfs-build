@@ -555,6 +555,10 @@ fix_fdinfo_inotify_mask() {
 	[ -f "$f" ] || return 0
 	grep -q 'inotify_mark_user_mask(mark)' "$f" || return 0
 	sed -i 's/inotify_mark_user_mask(mark)/(mark->mask \& IN_ALL_EVENTS)/g' "$f"
+	# The SUSFS hunk moved this declaration after statements, which gnu89
+	# rejects.  Drop it and inline the mask at the final seq_printf instead.
+	sed -i '/^[[:space:]]*u32 mask = .*IN_ALL_EVENTS.*;$/d' "$f"
+	sed -i 's/^[[:space:]]*mask, mark->ignored_mask);/(mark->mask \& IN_ALL_EVENTS), mark->ignored_mask);/' "$f"
 	ok "replaced missing inotify_mark_user_mask helper in fdinfo.c"
 }
 
