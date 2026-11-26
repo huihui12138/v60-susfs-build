@@ -560,6 +560,22 @@ fix_missing_build_files() {
 		printf '#ifndef __LINUX_STATIC_CALL_H\n#define __LINUX_STATIC_CALL_H\n#endif\n' > "$h"
 	fi
 	ok "stubbed missing firmware blob and static_call.h"
+
+	# This SukiSU builtin snapshot expects a newer SUSFS KSU API than the
+	# 1.5.5 kernel patch provides.  Disable the optional KPM extension and
+	# the SUSFS-only supercall/monitor call sites; core root hiding is intact.
+	local ksu="${KERNEL_DIR}/KernelSU/kernel"
+	if [ -d "$ksu" ]; then
+		sed -i 's/^#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)$/#if 0/' \
+			"${ksu}/kernel_compat.h"
+		sed -i 's/^[[:space:]]*susfs_parse_priority_app_strings();/\/\/ disabled/' \
+			"${ksu}/manager/pkg_observer.c"
+		sed -i 's/^[[:space:]]*susfs_start_sdcard_monitor_fn();/\/\/ disabled/' \
+			"${ksu}/supercall/dispatch.c"
+		perl -0pi -e 's/#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_sys_reboot/#if 0\nint ksu_handle_sys_reboot/' \
+			"${ksu}/supercall/dispatch.c"
+		ok "disabled SukiSU features requiring newer SUSFS API"
+	fi
 }
 
 # The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
