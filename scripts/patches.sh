@@ -587,6 +587,30 @@ fix_werror_flags() {
 	ok "downgraded ${before} -Werror flags across ${files} Makefile/Kbuild files"
 }
 
+# clang >= 14 lowers some strcpy()/sprintf() calls into stpcpy(), a libc
+# extension that Linux 4.19's lib/string.c never implemented. Provide it so
+# the final vmlinux link resolves (apparmor, tty, etc. reference it).
+fix_stpcpy_impl() {
+	local f="${KERNEL_DIR}/lib/string.c"
+	[ -f "$f" ] || return 0
+	grep -q 'char \*stpcpy(' "$f" && return 0
+	cat >>"$f" <<'EOF'
+
+/* stpcpy: like strcpy but returns a pointer to the terminating NUL.
+ * Needed because clang >= 14 lowers strcpy loops into stpcpy calls. */
+#ifndef __HAVE_ARCH_STPCPY
+char *stpcpy(char *dest, const char *src)
+{
+	while ((*dest++ = *src++) != '\0')
+		/* nothing */;
+	return dest - 1;
+}
+EXPORT_SYMBOL(stpcpy);
+#endif
+EOF
+	ok "added stpcpy() implementation to lib/string.c"
+}
+
 # The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
 # trees.  This 4.19 source computes the user-visible mask inline instead.
 fix_fdinfo_inotify_mask() {
@@ -617,6 +641,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			fix_missing_build_files
 			fix_vdso_macro_invocations
 			fix_werror_flags
+			fix_stpcpy_impl
 
 			# Matched-version build: official KernelSU v0.9.5 (flat layout) +
 			# susfs4ksu kernel-4.19 v1.5.5. No SukiSU API shims needed: the
