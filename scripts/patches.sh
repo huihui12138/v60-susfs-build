@@ -575,6 +575,32 @@ fix_vdso_debug_info() {
 	ok "disabled debug info for vgettimeofday.o (avoids DWARF5 .file on old as)"
 }
 
+# The 157 timelm_defconfig enables CONFIG_DEBUG_INFO=y, so ALL C files are
+# compiled with -g. clang14 emits DWARF5 ".file 0" / ".loc 0" directives that
+# the runner's older external GNU as rejects on any C object (e.g.
+# arch/arm64/mm/fault.o: "file number less than one", 2806 errors). The 113
+# branch did not enable DEBUG_INFO and built fine. The real device config.gz
+# has no CONFIG_DEBUG_INFO at all. Disable debug info globally:
+#   1) make the top-level Makefile's CONFIG_DEBUG_INFO block never expand
+#   2) drop CONFIG_DEBUG_INFO from the defconfig as a belt-and-braces measure
+fix_debug_info_global() {
+	local mk="${KERNEL_DIR}/Makefile"
+	if [ -f "$mk" ]; then
+		if grep -q '^ifdef CONFIG_DEBUG_INFO$' "$mk"; then
+			sed -i '0,/^ifdef CONFIG_DEBUG_INFO$/s//ifeq ($(CONFIG_DEBUG_INFO),never_enabled)/' "$mk"
+			ok "disabled DEBUG_INFO block in top Makefile"
+		else
+			ok "DEBUG_INFO block already disabled (idempotent)"
+		fi
+	fi
+	local cfg="${KERNEL_DIR}/arch/arm64/configs/vendor/timelm_defconfig"
+	if [ -f "$cfg" ]; then
+		sed -i 's/^CONFIG_DEBUG_INFO=y$/# CONFIG_DEBUG_INFO is not set/' "$cfg"
+		sed -i 's/^CONFIG_DEBUG_INFO_SPLIT=y$/# CONFIG_DEBUG_INFO_SPLIT is not set/' "$cfg"
+		ok "dropped CONFIG_DEBUG_INFO from timelm_defconfig"
+	fi
+}
+
 # This CAF tree references a firmware blob it does not ship, and SukiSU's
 # builtin branch includes <linux/static_call.h> even though 4.19 has no such
 # header and never uses static calls.  Provide harmless build-time stubs.
@@ -668,6 +694,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			fix_missing_build_files
 			fix_vdso_macro_invocations
 			fix_vdso_debug_info
+			fix_debug_info_global
 			fix_werror_flags
 			fix_stpcpy_impl
 
