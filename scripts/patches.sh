@@ -314,6 +314,16 @@ hooks_patch_apply() {
 	local variant=${KSU_VARIANT:-none} kver
 	kver=$(kernel_version "$KERNEL_DIR") || return 0
 
+	# Official KernelSU 0.9.x already hooks via its own kprobes (core_hook.c)
+	# and does NOT define the ksu_execveat_hook/ksu_vfs_read_hook/ksu_input_hook
+	# symbols that legacy_ksu_hooks.sh references. Injecting those hooks would
+	# leave undefined symbols at vmlinux link. The stock defconfig already has
+	# CONFIG_KPROBES=y, so simply skip manual hooking for this variant.
+	if [ "$variant" = "kernelsu" ]; then
+		info "official KernelSU uses built-in kprobes; skipping legacy manual hooks"
+		return 0
+	fi
+
 	group "Applying manual syscall hooks (kernel ${kver})"
 
 	# ReSukiSU publishes scope-minimised hook patches keyed by kernel version.
