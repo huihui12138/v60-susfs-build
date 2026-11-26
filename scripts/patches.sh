@@ -532,7 +532,9 @@ fix_vdso_macro_invocations() {
 	local f="${KERNEL_DIR}/arch/arm64/kernel/vdso/gettimeofday.S"
 	[ -f "$f" ] || return 0
 	sed -i 's/^[[:space:]]*clock_gettime_return, shift=/clock_gettime_return shift=/' "$f"
-	if grep -q 'clock_gettime_return, shift=' "$f"; then
+	# Only invocation lines start with the macro name; the .macro definition
+	# legitimately keeps the comma and must not trip this check.
+	if grep -q '^[[:space:]]*clock_gettime_return, shift=' "$f"; then
 		die "failed to fix clock_gettime_return macro invocations"
 	fi
 	ok "fixed clang IAS macro invocations in gettimeofday.S"
