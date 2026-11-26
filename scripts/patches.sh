@@ -548,6 +548,20 @@ fix_vdso_macro_invocations() {
 	fi
 }
 
+# This CAF tree references a firmware blob it does not ship, and SukiSU's
+# builtin branch includes <linux/static_call.h> even though 4.19 has no such
+# header and never uses static calls.  Provide harmless build-time stubs.
+fix_missing_build_files() {
+	mkdir -p "${KERNEL_DIR}/firmware/almf04"
+	: > "${KERNEL_DIR}/firmware/almf04/ALMF04_Sar2CNew_V2.04T.fw"
+
+	local h="${KERNEL_DIR}/include/linux/static_call.h"
+	if [ ! -f "$h" ]; then
+		printf '#ifndef __LINUX_STATIC_CALL_H\n#define __LINUX_STATIC_CALL_H\n#endif\n' > "$h"
+	fi
+	ok "stubbed missing firmware blob and static_call.h"
+}
+
 # The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
 # trees.  This 4.19 source computes the user-visible mask inline instead.
 fix_fdinfo_inotify_mask() {
@@ -574,6 +588,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 		custom)       custom_apply ;;
 		droidspaces)  droidspaces_apply ;;
 		all)
+			fix_missing_build_files
 			fix_vdso_macro_invocations
 
 			# Order matters and this is the tested one (4.19 + SukiSU builtin
