@@ -538,6 +538,14 @@ fix_vdso_macro_invocations() {
 		die "failed to fix clock_gettime_return macro invocations"
 	fi
 	ok "fixed clang IAS macro invocations in gettimeofday.S"
+
+	# clang IAS treats empty section flags as non-allocatable, while GNU as
+	# implies "a".  Make the two .note.Linux ELFNOTE blocks agree.
+	local h="${KERNEL_DIR}/include/linux/elfnote.h"
+	if [ -f "$h" ]; then
+		sed -i 's/ELFNOTE_START(name, type, "")/ELFNOTE_START(name, type, "a")/' "$h"
+		ok "fixed ELFNOTE section flags for clang IAS"
+	fi
 }
 
 # --------------------------------------------------------------------- main ---
