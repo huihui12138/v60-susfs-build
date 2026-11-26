@@ -126,11 +126,17 @@ setup_clang() {
 # host /usr/bin/as, which cannot handle -EL.  Provide GNU-named symlinks so
 # clang picks up the correct cross assembler.
 link_gnu_binutils() {
-	local dir=$1 prefix=$2 gnu_prefix=$3
+	local dir=$1 prefix=$2 gnu_prefix=$3 target
 	mkdir -p "$dir/bin"
 	for tool in as ld ar nm objcopy objdump strip readelf elfedit ranlib; do
 		[ -e "$dir/bin/${prefix}${tool}" ] || continue
-		ln -sfn "${prefix}${tool}" "$dir/bin/${gnu_prefix}${tool}"
+		target="${prefix}${tool}"
+		# AOSP GCC 4.9's assembler is too old for clang-generated asm; the
+		# runner's binutils-aarch64-linux-gnu package is much newer.
+		if [ "$tool" = as ] && [ -x "/usr/bin/${gnu_prefix}as" ]; then
+			target="/usr/bin/${gnu_prefix}as"
+		fi
+		ln -sfn "$target" "$dir/bin/${gnu_prefix}${tool}"
 	done
 	ok "linked ${gnu_prefix}* -> ${prefix}* in ${dir}/bin"
 }
