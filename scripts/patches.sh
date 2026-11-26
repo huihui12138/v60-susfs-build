@@ -568,6 +568,20 @@ fix_missing_build_files() {
 	ok "stubbed missing firmware blob and static_call.h"
 }
 
+# This CAF 4.19 tree hardcodes -Werror=<...> in its top-level Makefile, and
+# vendor drivers (techpack/display, vservices) trip those warnings on modern
+# clang. KCFLAGS=-Wno-error cannot override them because they are appended to
+# KBUILD_CFLAGS later. Downgrade every -Werror in the Makefile to -Wno-error.
+fix_werror_flags() {
+	local mk="${KERNEL_DIR}/Makefile"
+	[ -f "$mk" ] || return 0
+	local before after
+	before=$(grep -c -- '-Werror' "$mk" || true)
+	sed -i 's/-Werror/-Wno-error/g' "$mk"
+	after=$(grep -c -- '-Werror=' "$mk" || true)
+	ok "downgraded ${before} -Werror flags in top-level Makefile (remaining -Werror=: ${after})"
+}
+
 # The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
 # trees.  This 4.19 source computes the user-visible mask inline instead.
 fix_fdinfo_inotify_mask() {
@@ -597,6 +611,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			# CAF 4.19 build fixes (independent of the KSU variant).
 			fix_missing_build_files
 			fix_vdso_macro_invocations
+			fix_werror_flags
 
 			# Matched-version build: official KernelSU v0.9.5 (flat layout) +
 			# susfs4ksu kernel-4.19 v1.5.5. No SukiSU API shims needed: the
