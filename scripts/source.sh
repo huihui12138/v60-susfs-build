@@ -19,6 +19,21 @@ retry 3 git clone -q --recursive --depth=1 \
 	-b "$KERNEL_SOURCE_BRANCH" "$KERNEL_SOURCE" "$KERNEL_DIR" \
 	|| die "failed to clone ${KERNEL_SOURCE}"
 
+# Some CAF trees (e.g. LG V60 timelm) carry empty gitlink placeholders under
+# techpack/ (audio) with no Makefile and no resolvable submodule URL. Their
+# Kbuild auto-discovers every techpack/* dir via find, so an empty one breaks
+# scripts/Makefile.modbuiltin with "No rule to make target techpack/audio/Makefile".
+# Remove only empty techpack dirs (no Makefile/Kbuild); real ones are kept.
+if [ -d "${KERNEL_DIR}/techpack" ]; then
+	for tp in "${KERNEL_DIR}"/techpack/*/; do
+		[ -d "$tp" ] || continue
+		if [ ! -f "${tp}Makefile" ] && [ ! -f "${tp}Kbuild" ]; then
+			rm -rf "$tp"
+			warn "removed empty techpack dir: $(basename "$tp")"
+		fi
+	done
+fi
+
 # KernelSU forks compute their version from the commit count, and several
 # read it straight out of the enclosing git repo. A depth-1 clone reports 1
 # commit, which produces a nonsense version. Unshallow just enough to count.
