@@ -105,6 +105,21 @@ setup_clang() {
 	endgroup
 }
 
+# Old CAF trees force CLANG_TRIPLE=aarch64-linux-gnu- to avoid the Android
+# --target guard, but the AOSP GCC binutils are named aarch64-linux-android-*.
+# Clang then looks for aarch64-linux-gnu-as in --prefix and falls back to the
+# host /usr/bin/as, which cannot handle -EL.  Provide GNU-named symlinks so
+# clang picks up the correct cross assembler.
+link_gnu_binutils() {
+	local dir=$1 prefix=$2 gnu_prefix=$3
+	mkdir -p "$dir/bin"
+	for tool in as ld ar nm objcopy objdump strip readelf elfedit ranlib; do
+		[ -e "$dir/bin/${prefix}${tool}" ] || continue
+		ln -sfn "${prefix}${tool}" "$dir/bin/${gnu_prefix}${tool}"
+	done
+	ok "linked ${gnu_prefix}* -> ${prefix}* in ${dir}/bin"
+}
+
 # AOSP's GCC 4.9 prebuilts are still the binutils of choice for pre-5.x trees
 # that cannot yet use LLVM's integrated assembler.
 setup_gcc() {
@@ -113,6 +128,7 @@ setup_gcc() {
 	if is_true "${USE_CUSTOM_GCC_64:-false}"; then
 		group "Downloading custom GCC (arm64)"
 		fetch_toolchain_generic "${CUSTOM_GCC_64_SOURCE}" "${CUSTOM_GCC_64_BRANCH:-}" "$GCC64_DIR"
+		link_gnu_binutils "$GCC64_DIR" "${CUSTOM_GCC_64_BIN:-aarch64-linux-android-}" aarch64-linux-gnu-
 		export_env GCC_64 "CROSS_COMPILE=${GCC64_DIR}/bin/${CUSTOM_GCC_64_BIN:-aarch64-linux-android-}"
 		endgroup
 	elif is_true "${ENABLE_GCC_ARM64:-false}"; then
@@ -121,6 +137,7 @@ setup_gcc() {
 		fetch "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/${gcc_tag}.tar.gz" \
 			"${WORKSPACE}/gcc-aarch64.tar.gz"
 		extract_archive "${WORKSPACE}/gcc-aarch64.tar.gz" "$GCC64_DIR"
+		link_gnu_binutils "$GCC64_DIR" aarch64-linux-android- aarch64-linux-gnu-
 		export_env GCC_64 "CROSS_COMPILE=${GCC64_DIR}/bin/aarch64-linux-android-"
 		endgroup
 	fi
