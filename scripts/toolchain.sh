@@ -156,6 +156,18 @@ setup_gcc() {
 		export_env GCC_32 "CROSS_COMPILE_ARM32=${GCC32_DIR}/bin/arm-linux-androideabi-"
 		endgroup
 	fi
+
+	# Clang resolves the assembler by target-triple name from PATH.  The
+	# Kbuild CROSS_COMPILE prefix alone is not enough when CLANG_TRIPLE is
+	# overridden to aarch64-linux-gnu-, so expose the (symlinked) GNU-named
+	# cross binutils to every later step too.
+	if [ -d "${GCC64_DIR}/bin" ]; then
+		export PATH="${GCC64_DIR}/bin:${GCC32_DIR}/bin:${PATH}"
+		if [ -n "${GITHUB_PATH:-}" ] && [ -w "${GITHUB_PATH}" ]; then
+			printf '%s\n%s\n' "${GCC64_DIR}/bin" "${GCC32_DIR}/bin" >>"$GITHUB_PATH"
+		fi
+		ok "cross binutils added to PATH (${GCC64_DIR}/bin)"
+	fi
 }
 
 fetch_toolchain_generic() {
