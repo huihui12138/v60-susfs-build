@@ -558,6 +558,23 @@ fix_vdso_macro_invocations() {
 	fi
 }
 
+# The 157-branch vdso builds vgettimeofday.o from a .c file with CFLAGS that
+# inherit -g, so clang emits DWARF5 ".file 0" / ".loc 0" directives that the
+# runner's older external GNU as rejects ("file number less than one" / junk).
+# The 113 branch used a pure .S vdso and never hit this. Force -g0 for that
+# single object so no debug file/loc directives reach the assembler.
+fix_vdso_debug_info() {
+	local mk="${KERNEL_DIR}/arch/arm64/kernel/vdso/Makefile"
+	[ -f "$mk" ] || return 0
+	grep -q 'CFLAGS_vgettimeofday.o' "$mk" || return 0
+	# Already patched? stay idempotent across re-runs.
+	grep -q 'CFLAGS_vgettimeofday.o.*-g0' "$mk" && { ok "vdso debug info already disabled"; return 0; }
+	sed -i 's/^\(CFLAGS_vgettimeofday\.o[[:space:]]*=.*\)$/\1 -g0/' "$mk"
+	grep -q 'CFLAGS_vgettimeofday.o.*-g0' "$mk" \
+		|| die "failed to inject -g0 into vdso CFLAGS_vgettimeofday.o"
+	ok "disabled debug info for vgettimeofday.o (avoids DWARF5 .file on old as)"
+}
+
 # This CAF tree references a firmware blob it does not ship, and SukiSU's
 # builtin branch includes <linux/static_call.h> even though 4.19 has no such
 # header and never uses static calls.  Provide harmless build-time stubs.
@@ -650,6 +667,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			# CAF 4.19 build fixes (independent of the KSU variant).
 			fix_missing_build_files
 			fix_vdso_macro_invocations
+			fix_vdso_debug_info
 			fix_werror_flags
 			fix_stpcpy_impl
 
