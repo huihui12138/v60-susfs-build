@@ -548,6 +548,16 @@ fix_vdso_macro_invocations() {
 	fi
 }
 
+# The SUSFS 4.19 fdinfo hunk calls a helper that only exists in newer CAF
+# trees.  This 4.19 source computes the user-visible mask inline instead.
+fix_fdinfo_inotify_mask() {
+	local f="${KERNEL_DIR}/fs/notify/fdinfo.c"
+	[ -f "$f" ] || return 0
+	grep -q 'inotify_mark_user_mask(mark)' "$f" || return 0
+	sed -i 's/inotify_mark_user_mask(mark)/(mark->mask \& IN_ALL_EVENTS)/g' "$f"
+	ok "replaced missing inotify_mark_user_mask helper in fdinfo.c"
+}
+
 # --------------------------------------------------------------------- main ---
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
@@ -576,7 +586,10 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 				hooks_patch_apply
 			fi
 
-			if is_true "${ENABLE_SUSFS:-false}";      then susfs_apply;      fi
+			if is_true "${ENABLE_SUSFS:-false}"; then
+				susfs_apply
+				fix_fdinfo_inotify_mask
+			fi
 			if is_true "${ENABLE_HIDE_STUFF:-false}"; then hide_stuff_apply; fi
 			if is_true "${ENABLE_CUSTOM_PATCHES:-false}"; then custom_apply; fi
 			if is_true "${ENABLE_DROIDSPACES:-false}"; then droidspaces_apply; fi
