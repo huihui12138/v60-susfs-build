@@ -525,6 +525,19 @@ droidspaces_apply() {
 	endgroup
 }
 
+# clang's integrated assembler rejects the GNU-as-only "macro, arg=value"
+# spelling used by this old CAF vdso source.  Remove the stray comma so the
+# three clock_gettime_return shift=1 invocations assemble cleanly.
+fix_vdso_macro_invocations() {
+	local f="${KERNEL_DIR}/arch/arm64/kernel/vdso/gettimeofday.S"
+	[ -f "$f" ] || return 0
+	sed -i 's/^[[:space:]]*clock_gettime_return, shift=/clock_gettime_return shift=/' "$f"
+	if grep -q 'clock_gettime_return, shift=' "$f"; then
+		die "failed to fix clock_gettime_return macro invocations"
+	fi
+	ok "fixed clang IAS macro invocations in gettimeofday.S"
+}
+
 # --------------------------------------------------------------------- main ---
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
@@ -537,6 +550,8 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 		custom)       custom_apply ;;
 		droidspaces)  droidspaces_apply ;;
 		all)
+			fix_vdso_macro_invocations
+
 			# Order matters and this is the tested one (4.19 + SukiSU builtin
 			# + SUSFS 1.5.5, no rejects):
 			#   path_umount and the hook patches both key off textual anchors
