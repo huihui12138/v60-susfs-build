@@ -555,6 +555,12 @@ fix_missing_build_files() {
 	mkdir -p "${KERNEL_DIR}/firmware/almf04"
 	: > "${KERNEL_DIR}/firmware/almf04/ALMF04_Sar2CNew_V2.04T.fw"
 
+	# This CAF tree references a camera DTSI that lives in an unfetched
+	# gitlink.  An empty stub keeps DTB generation working; camera nodes
+	# are optional for boot.
+	mkdir -p "${KERNEL_DIR}/arch/arm64/boot/dts/vendor/qcom/camera"
+	: > "${KERNEL_DIR}/arch/arm64/boot/dts/vendor/qcom/camera/kona-camera.dtsi"
+
 	local h="${KERNEL_DIR}/include/linux/static_call.h"
 	if [ ! -f "$h" ]; then
 		printf '#ifndef __LINUX_STATIC_CALL_H\n#define __LINUX_STATIC_CALL_H\n#endif\n' > "$h"
@@ -592,6 +598,39 @@ fix_fdinfo_inotify_mask() {
 	ok "replaced missing inotify_mark_user_mask helper in fdinfo.c"
 }
 
+# SukiSU builtin calls a handful of SUSFS helpers that only exist in newer
+# SUSFS releases.  Provide no-op/compatible definitions on top of 1.5.5.
+fix_sukisu_susfs_api() {
+	local h="${KERNEL_DIR}/include/linux/susfs_def.h"
+	[ -f "$h" ] || return 0
+	if ! grep -q 'susfs_set_current_proc_no_su' "$h"; then
+		cat >>"$h" <<'EOF'
+
+/* Compatibility shims for SukiSU builtin on SUSFS 1.5.5 */
+static inline bool susfs_starts_with(const char *s, const char *prefix)
+{
+	return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+static inline bool susfs_ends_with(const char *s, const char *suffix)
+{
+	size_t sl = strlen(s), pl = strlen(suffix);
+	return sl >= pl && strcmp(s + sl - pl, suffix) == 0;
+}
+
+static inline void susfs_set_current_proc_no_su(void) {}
+static inline void susfs_set_current_proc_umounted(void) {}
+static inline void susfs_set_current_proc_umounted_for_zygote_next(void) {}
+EOF
+		ok "added SUSFS 1.5.5 compatibility helpers for SukiSU"
+	fi
+
+	# 4.19 has no strncpy_from_user_nofault; use SukiSU's own fallback wrapper.
+	local ev="${KERNEL_DIR}/KernelSU/kernel/sulog/event.c"
+	[ -f "$ev" ] || return 0
+	sed -i 's/\bstrncpy_from_user_nofault(/ksu_strncpy_from_user_nofault(/g' "$ev"
+}
+
 # --------------------------------------------------------------------- main ---
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
@@ -624,6 +663,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			if is_true "${ENABLE_SUSFS:-false}"; then
 				susfs_apply
 				fix_fdinfo_inotify_mask
+				fix_sukisu_susfs_api
 			fi
 			if is_true "${ENABLE_HIDE_STUFF:-false}"; then hide_stuff_apply; fi
 			if is_true "${ENABLE_CUSTOM_PATCHES:-false}"; then custom_apply; fi
