@@ -80,6 +80,14 @@ susfs_apply() {
 	[ -n "$kernel_patch" ] && [ -f "$kernel_patch" ] \
 		|| die "no 50_add_susfs_in_*.patch found in ${kp}"
 
+	# Prefer a device-specific SUSFS patch shipped in the repo (e.g. CAF kernels
+	# without ANDROID_KABI_RESERVE, where upstream AOSP hunks do not fit).
+	local _custom_susfs_patch="${REPO_ROOT}/patches/susfs_${branch}_v60.patch"
+	if [ -f "$_custom_susfs_patch" ]; then
+		kernel_patch="$_custom_susfs_patch"
+		info "using device-specific SUSFS patch: $(basename "$kernel_patch")"
+	fi
+
 	( cd "$KERNEL_DIR" && apply_patch "$kernel_patch" 1 ) \
 		|| die "the SUSFS kernel patch did not apply cleanly.
        This usually means SUSFS_BRANCH does not match your kernel. Detected
